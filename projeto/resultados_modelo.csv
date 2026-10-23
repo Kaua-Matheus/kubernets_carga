@@ -1,0 +1,11 @@
+﻿rotulo;rodada;replicas;taxa;rotas_ok;sucessos_por_s;falhas_pct;p95_latencia_ok_ms;dropped_iterations_medicao;status_job;cpu_observada_por_pod;distribuicao_aceitos_por_pod;observacoes
+piloto;calibracao;1;8;63;1,05;86.90;987.74;0;Failed;t2c9s=1m;t2c9s=+174;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+3pods-a;A;3;8;155;2,583;67.77;1.02;0;Failed;5dp62=355m, t2c9s=375m, zdvhj=378m;5dp62=+60, t2c9s=+132, zdvhj=61;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+1pod-a;A;1;8;59;0,983;87.73;1.05;0;Failed;t2c9s=344m;t2c9s=+201;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+2pods-a;A;2;8;109;1,816;77.33;1.22;0;Failed;lt54j=299m, t2c9s=363m;lt54j=+63, t2c9s=+264;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+2pods-b;B;2;8;105;1,75;78.12;1.09;0;Failed;lt54j=1m, t2c9s=1m;lt54j=+125, t2c9s=+325;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+3pods-b;B;3;8;150;2,5;68.75;1.01;0;Failed;cpp7c=403m, lt54j=366m, t2c9s=380m;cpp7c=+61, lt54j=+183, t2c9s=+382;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+1pod-b;B;1;8;59;0,983;87.73;1.08;0;Failed;t2c9s=318m;t2c9s=+452;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+1pod-c;C;1;8;64;1,066;86.66;945.7;0;Failed;t2c9s=297m;t2c9s=+527;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+2pods-c;C;2;8;114;1,9;76.29;959.01;0;Failed;2gxhz=363m, t2c9s=352m;2gxhz=+65, t2c9s=+593;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
+3pods-c;C;3;8;149;2,483;68.95;995.05;0;Failed;bdl43=389m, t2c9s=373m, agvh1=375m;bdl43=65, t2c9s=455, agvh1=150;"Falha > 1%; p95 acima de 800ms e dropped OK; k6 saiu 99;"
