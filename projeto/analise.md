@@ -50,7 +50,7 @@ Nenhuma leitura chegou perto de 500m. O `kubectl top` mostra médias de uma jane
 
 **Distribuição entre Pods:** não consegui obter uma distribuição confiável. Os valores registrados não são diferenças entre antes e depois do teste: por exemplo, o Pod `t2c9s` cresce de 174 para 593 em testes idênticos, e em 1 Pod o valor registrado (201) é maior que o total aceito. Por isso a análise não tira conclusões sobre desbalanceamento. A coluna do CSV guarda os valores brutos, marcados como tal.
 
-**Teste extra (`limite`):** com 6 réplicas solicitadas, taxa 8, foram 210 rotas concluídas (3,5/s) e 56,34% de falhas, com p95 de 1,05 s. Não entra nas medianas. Não registrei quantos Pods ficaram `Ready` durante esse teste, então o resultado só mostra que subir o número de réplicas pedidas não multiplicou a vazão na mesma proporção.
+**Teste extra (`limite`):** com 6 réplicas solicitadas, taxa 8, foram 210 rotas concluídas (3,5/s) e 56,34% de falhas, com p95 de 1,05 s. Não entra nas medianas.
 
 **Teste adicional com 12 Pods (cluster com 5 CPUs, mesma taxa 8):** pretendia verificar se a falha persistia com capacidade de sobra.
 - Falhas, `rotas_ok` e p95: 205 e 1050ms.
