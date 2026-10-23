@@ -61,7 +61,7 @@ Nenhuma leitura chegou perto de 500m. O `kubectl top` mostra médias de uma jane
 - Mesmo com 3 Pods, 68,75% dos pedidos receberam falha (503 da aplicação).
 
 **Hipóteses (não verificadas):**
-1. *Tempo de cálculo e p95.* O p95 não melhora com mais Pods porque ele mede o tempo de um cálculo, e esse tempo depende da CPU de cada Pod (500m) e da velocidade do processador do computador, não da quantidade de Pods. Isso sugere que a meta de p95 < 800 ms não seria atingida com 500m por Pod, em nenhuma quantidade de réplicas. [Opcional: comparar com o `calculo_ms` medido no passo 2.3, sem limite de CPU.]
+1. *Tempo de cálculo e p95.* O p95 não melhora com mais Pods porque ele mede o tempo de um cálculo, e esse tempo depende da CPU de cada Pod (500m) e da velocidade do processador do computador, não da quantidade de Pods. Isso sugere que a meta de p95 < 800 ms não seria atingida com 500m por Pod, em nenhuma quantidade de réplicas.
 2. *Falhas com 3 Pods.* A demanda (8/s) é mais de três vezes a capacidade medida (2,5/s), então a maior parte dos pedidos encontra todos os Pods ocupados e recebe 503 por desenho da aplicação (um cálculo por vez, sem fila). Além disso, o Service escolhe o Pod sem saber se ele está ocupado, então até sobre capacidade ainda haveria alguns 503.
 3. *Rendimento por Pod decrescente.* A disputa por CPU no mesmo nó entre os Pods, o k6 e os componentes do cluster pode explicar a queda de 0,98 para 0,83 rotas/s por Pod.
 4. *CPU abaixo de 500m.* Pode ser média do metrics-server sobre a janela, com o Pod ocioso em parte dela. Também poderia indicar que o limite não era o gargalo; isso não foi testado.
