@@ -1,71 +1,83 @@
-# 1. Cenário
-Computador usado:
-    - OS: Ubuntu 24.04.4 LTS (64-bit)
-    - Intel® Xeon® E5-2620 v3 × 12 núcleos
-    - 16,0 GiB Ram
-    - 560,1 GB
-Recursos do cluster:
-Resource           Requests     Limits
-  --------           --------     ------
-  cpu                1450m (12%)  600m (5%)
-  memory             484Mi (3%)   348Mi (2%)
-  ephemeral-storage  0 (0%)       0 (0%)
-  hugepages-1Gi      0 (0%)       0 (0%)
-  hugepages-2Mi      0 (0%)       0 (0%)
+# Análise – RotaExpress: 1, 2 e 3 Pods
 
-Carga:
-    - Taxa: 8
-    - Paradas: 9
-    - Duração: 60s + (10s aquecimento) + (10s wait): ~120
+## 1. Cenário
 
-Taxa escolhida e por quê:
-    Os testes foram executados com uma taxa fixada em 8. A ideia era extressar um pouco mais o hardware e agravar os resultados de carga. 
+**Computador:** Ubuntu 24.04.4 LTS, Intel Xeon E5-2620 v3 (12 núcleos), 16 GiB de RAM.
 
-    Resultados Observados:
+**Cluster:** Minikube (perfil `ops-lab`, driver Docker), criado com `--cpus=3 --memory=3072`. Um único nó.
+Na saída de `kubectl describe node ops-lab` (com 1 réplica no ar) os requests somavam 1450m de CPU (12%) e 484Mi de memória (3%).
+Esses percentuais sugerem que o nó reporta a CPU do computador (cerca de 12 núcleos), e que o teto de 3 CPUs vem do Docker, não do scheduler. Isso é uma hipótese, não foi verificada.
 
-    Capacidade de Atendimento por Instância: Os testes com 1 Pod isolado demonstraram uma vazão estável de aproximadamente 1 req/s (sucessos_por_s), evidenciando o gargalo imposto pelas restrições de CPU e memória alocadas no cluster local.
+**Recursos por Pod da aplicação:** requests = limits = 500m de CPU; memória 64Mi (request) e 128Mi (limit).
+**Gerador de carga (k6):** request 250m e limit 500m de CPU, no mesmo nó.
 
-    Ganho de Escalabilidade: A introdução incremental de réplicas demonstrou ganho de desempenho proporcional e previsível. Com 2 Pods, a vazão média subiu para ~1,85 req/s, e com 3 Pods atingiu o patamar máximo de ~2,5 req/s.
+**Carga (idêntica em todas as execuções):**
+- Taxa: 8 pedidos/s (`constant-arrival-rate`), 9 paradas por rota.
+- Aquecimento de 10 s (fora das métricas), intervalo de 10 s e medição de 60 s. O cenário completo dura cerca de 80 a 90 s.
+- Cada pedido abre uma conexão nova (`noConnectionReuse`), então o Service escolhe o Pod a cada pedido.
 
-    Saturação e Degradação: Como a taxa injetada (8 req/s) superou a capacidade agregada do cluster de três instâncias (~2,5 req/s), o sistema operou propositalmente em regime de saturação. Isso se refletiu em uma taxa de falhas decrescente conforme a escalabilidade horizontal mitigava parte da pressão (de 87,7% com 1 Pod para ~68% com 3 Pods), mantendo zero iterações descartadas (dropped_iterations_medicao = 0), o que valida a confiabilidade e integridade da coleta de métricas.
-Duração: 
-    60s + (10s aquecimento) + (10s wait): ~120s
-Recursos por Pod:
-    Limits:
-      cpu:     500m
-      memory:  128Mi
+**Por que taxa 8:** o piloto com 1 Pod e taxa 8 teve 86,9% de falhas e 63 rotas concluídas, sem iterações descartadas, ou seja, o k6 gerou toda a demanda pedida.
+Decidi manter 8 para ter uma demanda bem acima da capacidade de 1 Pod e observar o quanto cada configuração aliviava a pressão.
+Consequência assumida: com essa taxa nenhuma configuração poderia atingir as metas, porque a capacidade medida de 3 Pods (cerca de 2,5 rotas/s) é menos de um terço da demanda.
 
-# 2. Evidências
-Mediana por quantidade de Pods:
+**Execuções:** piloto, 9 medições (3 repetições por configuração, ordem alternada A/B/C conforme a tabela 7.5 do roteiro) e 1 teste extra (`limite`, passo 8.1), todos com logs em `resultados/`.
 
-| Pods | Sucessos/s | Falhas | p95 `latencia_ok` | Iterações descartadas |
-|---|---|---|---|---|
-| 1 | **0,983 req/s** | **87,73%** | 1,08 s | 0 |
-| 2 | **1,816 req/s** | **77,33%** | 1,22 s | 0 |
-| 3 | **2,500 req/s** | **68,75%** | 1,02 s | 0 |
+## 2. Evidências
 
-Uso de CPU Observado: Com o limite de 500m configurado por Pod, as instâncias operaram sob forte estresse, registrando picos entre 300m e 400m de CPU. A oscilação abaixo do teto absoluto de 500m deve-se aos atrasos de amostragem do metrics-server, servindo como indício claro de estrangulamento computacional.
+Mediana das 3 repetições de cada configuração:
 
-# 3. Explicação
+| Pods | rotas_ok (3 repetições) | Sucessos/s (mediana) | Falhas (mediana) | p95 `latencia_ok` (mediana) | Iterações descartadas | CPU reservada |
+|---|---|---|---|---|---|---|
+| 1 | 59 / 59 / 64 | **0,983** | **87,73%** | **1,05 s** | 0 | 500m |
+| 2 | 109 / 105 / 114 | **1,817** | **77,33%** | **1,09 s** | 0 | 1000m |
+| 3 | 155 / 150 / 149 | **2,500** | **68,75%** | **1,01 s** | 0 | 1500m |
 
-Por que a CPU observada ficou abaixo de 500m (não cravada no limite): Os atrasos e o intervalo de amostragem do metrics-server do Kubernetes falham em capturar picos instantâneos e de curtíssima duração, além de o processamento do grafo alternar entre gargalos de CPU e momentos de espera de E/S.
+Sucessos por segundo = `rotas_ok / 60`. O p95 das medianas vem dos valores de cada rodada (1 Pod: 1,05 / 1,08 / 0,946 s; 2 Pods: 1,22 / 1,09 / 0,959 s; 3 Pods: 1,02 / 1,01 / 0,995 s).
 
-Por que mais replicas ajudaram (mas pouco em termos de erradicar as falhas): A hipótese é que, embora 3 Pods tripliquem a capacidade de processamento individual (passando de ~1 req/s para ~2,5 req/s), a taxa de chegada escolhida (8 req/s) continuou sendo drasticamente superior à capacidade agregada do cluster. Por isso, o sistema continuou em severa saturação, mantendo taxas de erro altas (~68%), mas mostrando que a adição de réplicas aliviou parcialmente a pressão comparado ao cenário de 1 Pod.
+Vazão por Pod: 0,98 (1 Pod), 0,91 (2 Pods) e 0,83 (3 Pods) rotas/s. Vazão por CPU reservada: 1,97, 1,82 e 1,67 rotas/s.
 
-Por que houve desbalanceamento de requisições entre os Pods: A hipótese é que a ausência de session affinity e o comportamento padrão do balanceamento de carga nativo resultaram em acúmulo de conexões em instâncias mais antigas ou ativas há mais tempo (como o pod t2c9s), enquanto pods efêmeros receberam menor volume relativo nas janelas de medição.
+As faixas de `rotas_ok` das três configurações não se sobrepõem (59–64, 105–114, 149–155), então a diferença entre elas é maior que a variação entre repetições.
 
-# 4. Decisão
-Para atender de forma estável à taxa de 8 requisições por segundo considerando a capacidade unitária de um Pod (aprox. 1 req/s com os recursos atuais), o ideal seria escalar horizontalmente para 8 a 9 réplicas de Pods, mantendo a cota atual de 500m de CPU e 128Mi de memória por Pod.
-Custo em CPU Reservada:
-    Se considerarmos 9 réplicas com limits/requests de 500m (0.5 núcleo) cada:
-    $9 \times 0.5\text{ núcleos} =$ 4,5 núcleos de CPU reservados (ou 4500m).
+**Metas do k6 (falhas < 1%, p95 < 800 ms, 0 descartadas):** em todas as execuções o `dropped_iterations` foi 0, mas as metas de falhas e de p95 falharam. Todos os Jobs terminaram como `Failed` com código 99 do k6, o que é um resultado válido (a aplicação não cumpriu as metas), e não uma falha de execução.
 
-Como o cenário com 3 Pods ainda operou sob forte saturação (~68% de falhas), a próxima investigação deve seguir quatro frentes estruturadas:
+**CPU observada (`kubectl top pods`):**
+- 1 Pod: 297m a 344m.
+- 2 Pods: 299m a 363m.
+- 3 Pods: 355m a 403m.
+- Duas leituras de `1m` (piloto e `2pods-b`) foram feitas com o Pod sem carga e foram descartadas.
 
-1. Escala Horizontal Avançada (Horizontal Pod Autoscaling): Validar se o cluster suporta subir o cluster para a faixa de 8 a 10 réplicas simultâneas para absorver totalmente a taxa de 8 req/s sem perda de estabilidade.
+Nenhuma leitura chegou perto de 500m. O `kubectl top` mostra médias de uma janela de alguns segundos, então ele pode esconder picos.
 
-2. Ajuste de Recursos Verticais (Vertical Scaling): Testar o aumento do limite de CPU por Pod (ex: de 500m para 1000m ou 2000m) para verificar se a vazão individual sobe proporcionalmente, reduzindo a necessidade de dezenas de réplicas.
+**Distribuição entre Pods:** não consegui obter uma distribuição confiável. Os valores registrados não são diferenças entre antes e depois do teste: por exemplo, o Pod `t2c9s` cresce de 174 para 593 em testes idênticos, e em 1 Pod o valor registrado (201) é maior que o total aceito. Por isso a análise não tira conclusões sobre desbalanceamento. A coluna do CSV guarda os valores brutos, marcados como tal.
 
-3. Profiling de Código e Gargalos da Aplicação: Investigar o código do serviço de processamento de grafos para identificar se há travamentos (locks), processamento síncrono bloqueante ou gargalos no algoritmo que limitam o desempenho por núcleo.
+**Teste extra (`limite`):** com 6 réplicas solicitadas, taxa 8, foram 210 rotas concluídas (3,5/s) e 56,34% de falhas, com p95 de 1,05 s. Não entra nas medianas. Não registrei quantos Pods ficaram `Ready` durante esse teste, então o resultado só mostra que subir o número de réplicas pedidas não multiplicou a vazão na mesma proporção.
 
-4. Inspeção de Rede e Timeouts: Analisar o comportamento do balanceador de carga, Ingress Controllers e políticas de timeout HTTP para garantir que as falhas não sejam causadas por rejeição prematura de conexões na borda.
+## 3. Explicação
+
+**Observado:**
+- A vazão cresceu com o número de Pods (0,98 → 1,82 → 2,50 rotas/s) e as falhas caíram (87,7% → 77,3% → 68,8%). Cada Pod calcula uma rota por vez, então mais Pods permitem mais cálculos simultâneos.
+- O ganho por Pod diminuiu (0,98 → 0,91 → 0,83 rotas/s). O ganho não foi proporcional.
+- O p95 dos sucessos ficou em cerca de 1 s em todas as configurações, sem melhora com mais Pods. A média da latência dos sucessos também ficou em 0,90 a 0,96 s.
+- Mesmo com 3 Pods, 68,75% dos pedidos receberam falha (503 da aplicação).
+
+**Hipóteses (não verificadas):**
+1. *Tempo de cálculo e p95.* O p95 não melhora com mais Pods porque ele mede o tempo de um cálculo, e esse tempo depende da CPU de cada Pod (500m) e da velocidade do processador do computador, não da quantidade de Pods. Isso sugere que a meta de p95 < 800 ms não seria atingida com 500m por Pod, em nenhuma quantidade de réplicas. [Opcional: comparar com o `calculo_ms` medido no passo 2.3, sem limite de CPU.]
+2. *Falhas com 3 Pods.* A demanda (8/s) é mais de três vezes a capacidade medida (2,5/s), então a maior parte dos pedidos encontra todos os Pods ocupados e recebe 503 por desenho da aplicação (um cálculo por vez, sem fila). Além disso, o Service escolhe o Pod sem saber se ele está ocupado, então até sobre capacidade ainda haveria alguns 503.
+3. *Rendimento por Pod decrescente.* A disputa por CPU no mesmo nó entre os Pods, o k6 e os componentes do cluster pode explicar a queda de 0,98 para 0,83 rotas/s por Pod.
+4. *CPU abaixo de 500m.* Pode ser média do metrics-server sobre a janela, com o Pod ocioso em parte dela. Também poderia indicar que o limite não era o gargalo; isso não foi testado.
+
+## 4. Decisão
+
+**Entre as configurações medidas, adotaria 3 Pods:** foi a que mais concluiu rotas (2,5/s) e a que menos falhou (68,75%). O custo é 1500m de CPU reservada (requests = limits) e 384Mi de memória no limite, equivalente à metade dos 3 CPUs declarados ao Minikube.
+
+**Mas nenhuma configuração atingiu as metas.** Para a taxa de 8 pedidos/s, 3 Pods não é suficiente: atende cerca de 31% da demanda.
+
+**Extrapolação (não medida):** com ~0,83 a 0,98 rotas/s por Pod, atender 8 pedidos/s exigiria na ordem de 9 a 10 Pods, ou seja, 4,5 a 5 CPUs reservadas. Isso não cabe no cluster atual de 3 CPUs e ainda teria falhas, porque o balanceamento não conhece a ocupação dos Pods.
+
+**Próximas investigações, em ordem:**
+1. Repetir a série com uma taxa próxima da capacidade medida (por exemplo, 2 a 3 pedidos/s) para ver se 3 Pods passam nas metas e a partir de quantos Pods a falha cai abaixo de 1%.
+2. Testar 1 Pod com limite de CPU maior (por exemplo, 1000m) para ver se o p95 cai abaixo de 800 ms. Acima de 1 núcleo não deve ajudar, porque cada Pod faz um cálculo por vez.
+3. Refazer a medição da distribuição entre Pods com contadores antes e depois de cada teste.
+4. Se a demanda real for alta, mudar o desenho da aplicação (fila, ou balanceador que conheça a ocupação) em vez de apenas aumentar réplicas. Só depois disso, avaliar um HPA, usando a capacidade por réplica medida aqui.
+
+**Limite da conclusão:** 3 Pods em um único nó não protegem contra a queda do nó. O laboratório mede atendimento sob carga, não recuperação de desastre.
